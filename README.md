@@ -11,11 +11,15 @@ Small Python script to block or unblock domains from a list using `/etc/hosts`.
 
 #### Block domain
 ```bash
-~ ❯ ./etc-hosts-locker.py block --file="servers"
+~ ❯ ./etc-hosts-locker.py block --file servers
+```
+#### Block one domain
+```bash
+~ ❯ ./etc-hosts-locker.py block --domain example.com
 ```
 #### Unblock domain
 ```bash
-~ ❯ ./etc-hosts-locker.py unblock --file="servers"
+~ ❯ ./etc-hosts-locker.py unblock --file servers
 ```
 #### Currently blocked domains
 ```bash
@@ -25,7 +29,7 @@ Small Python script to block or unblock domains from a list using `/etc/hosts`.
 ## Requirements
 
 - Python **3.8+**
-- Linux / macOS / Windows
+- Linux / macOS
 - **Root / Administrator privileges** (required to modify `/etc/hosts`)
 
 ### Commands

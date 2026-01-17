@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-import subprocess
-import platform
 import argparse
 import os
+import platform
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -17,7 +17,7 @@ def get_dictionary(file=None) -> set:
     dictionary_file = file if file else HOSTS_DICTIONARY
     path = Path(dictionary_file)
     if not path.exists():
-        print(f"Файл справочника не найден: {dictionary_file}")
+        print(f"Dictionary file not found: {dictionary_file}")
         sys.exit(1)
 
     return {line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()}
@@ -25,13 +25,13 @@ def get_dictionary(file=None) -> set:
 
 def check_root():
     if os.geteuid() != 0:
-        print("Данный скрипт требует root-права. Запусти через sudo.")
+        print("Root privileges required. Try with sudo.")
         sys.exit(1)
 
 
 def backup():
     shutil.copy(ETC_HOSTS_FILE, ETC_HOSTS_FILE_BACKUP)
-    print(f"Создана резервная копия: {ETC_HOSTS_FILE_BACKUP}")
+    print(f"Backup created: {ETC_HOSTS_FILE_BACKUP}")
 
 
 def read_hosts_file() -> list:
@@ -42,7 +42,8 @@ def read_hosts_file() -> list:
 def write_hosts_file(lines: list):
     with open(ETC_HOSTS_FILE, "w", encoding="utf-8") as f:
         f.writelines(lines)
-    print(f"Изменения успешно записаны в {ETC_HOSTS_FILE}")
+    print(f"File {ETC_HOSTS_FILE} was changed!")
+
 
 def flush_dns():
     system = platform.system()
@@ -54,12 +55,17 @@ def flush_dns():
             subprocess.run(["sudo", "dscacheutil", "-flushcache"], check=False)
             subprocess.run(["sudo", "killall", "-HUP", "mDNSResponder"], check=False)
         else:
-            print("Неизвестная ОС, DNS кеш не очищен")
+            print("Unknown operating system. DNS Flush skipped")
     except Exception as e:
-        print("Ошибка при попытке очистить DNS кеш:", e)
+        print("Exception while DNS Flushing:", e)
 
-def block(file=None):
-    dictionary = get_dictionary(file)
+
+def block(file=None, domain=None):
+    if file:
+        dictionary = get_dictionary(file)
+    else:
+        dictionary = [domain]
+
     hosts_lines = read_hosts_file()
     new_lines = hosts_lines.copy()
 
@@ -71,8 +77,12 @@ def block(file=None):
     flush_dns()
 
 
-def unblock(file=None):
-    dictionary = get_dictionary(file)
+def unblock(file=None, domain=None):
+    if file:
+        dictionary = get_dictionary(file)
+    else:
+        dictionary = [domain]
+
     hosts_lines = read_hosts_file()
     new_lines = []
 
@@ -95,7 +105,7 @@ def unblock(file=None):
     flush_dns()
 
 
-def blocked_list(file=None):
+def blocked_list():
     hosts_lines = read_hosts_file()
     blocked = []
 
@@ -108,20 +118,44 @@ def blocked_list(file=None):
             blocked.extend(parts[1:])
 
     if blocked:
-        print("Заблокированные домены:")
+        print("Blocked domains:\n")
         for domain in blocked:
             print(domain)
     else:
-        print("Нет заблокированных доменов.")
+        print("No blocked domains right now.")
+
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Управление блокировкой доменов через /etc/hosts")
-    parser.add_argument("--file", help="Файл со списком доменов для применения (если не будет выбран, то берется файл \"servers\" рядом со скриптом)", default="servers")
+    parser = argparse.ArgumentParser(description="Manage domain blocking via /etc/hosts")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    subparsers.add_parser("block", help="Блокировка доменов из списка")
-    subparsers.add_parser("unblock", help="Разблокировка доменов из списка")
-    subparsers.add_parser("list", help="Показать все заблокированные домены")
+
+    block_parser = subparsers.add_parser("block", help="Block domains from the list")
+    block_parser.add_argument(
+        "--domain",
+        help="Domain to target lock without list"
+    )
+    block_parser.add_argument(
+        "--file",
+        help="File with the list of domains to apply (if not specified, the --domain option is waiting)"
+    )
+
+    unblock_parser = subparsers.add_parser("unblock", help="Unblock domains from the list")
+    unblock_parser.add_argument(
+        "--domain",
+        help="Domain to target lock without list"
+    )
+    unblock_parser.add_argument(
+        "--file",
+        help="File with the list of domains to apply (if not specified, the --domain option is waiting)"
+    )
+
+    subparsers.add_parser("list", help="Show all blocked domains")
     return parser.parse_args()
+
+def check_args(args):
+    if args.file is None and args.domain is None:
+        print("No file or domain specified")
+        sys.exit(1)
 
 
 actions = {
@@ -133,6 +167,7 @@ actions = {
 
 def menu():
     args = parse_args()
+    check_args(args)
 
     if args.command in ["block", "unblock"]:
         check_root()
@@ -140,9 +175,9 @@ def menu():
 
     action = actions.get(args.command)
     if action:
-        action(args.file)
+        action(args.file, args.domain)
     else:
-        print("Данное действие не поддерживается")
+        print("Chosen action not found")
 
 
 if __name__ == '__main__':
