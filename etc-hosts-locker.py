@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
+import subprocess
+import platform
 import argparse
 import os
-import sys
 import shutil
+import sys
 from pathlib import Path
 
 HOSTS_DICTIONARY = "servers"
-ETC_HOSTS_FILE = "../hosts"
-ETC_HOSTS_FILE_BACKUP = "../hosts.backup"
+ETC_HOSTS_FILE = "/etc/hosts"
+ETC_HOSTS_FILE_BACKUP = "/etc/hosts.backup"
 ZEROED_IP = "0.0.0.0"
 
 
-def get_dictionary() -> set:
-    path = Path(HOSTS_DICTIONARY)
+def get_dictionary(file=None) -> set:
+    dictionary_file = file if file else HOSTS_DICTIONARY
+    path = Path(dictionary_file)
     if not path.exists():
-        print(f"Файл справочника не найден: {HOSTS_DICTIONARY}")
+        print(f"Файл справочника не найден: {dictionary_file}")
         sys.exit(1)
 
     return {line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()}
@@ -41,9 +44,22 @@ def write_hosts_file(lines: list):
         f.writelines(lines)
     print(f"Изменения успешно записаны в {ETC_HOSTS_FILE}")
 
+def flush_dns():
+    system = platform.system()
+    try:
+        if system == "Linux":
+            subprocess.run(["sudo", "systemd-resolve", "--flush-caches"], check=False)
+            subprocess.run(["sudo", "systemctl", "restart", "nscd"], check=False)
+        elif system == "Darwin":
+            subprocess.run(["sudo", "dscacheutil", "-flushcache"], check=False)
+            subprocess.run(["sudo", "killall", "-HUP", "mDNSResponder"], check=False)
+        else:
+            print("Неизвестная ОС, DNS кеш не очищен")
+    except Exception as e:
+        print("Ошибка при попытке очистить DNS кеш:", e)
 
-def block():
-    dictionary = get_dictionary()
+def block(file=None):
+    dictionary = get_dictionary(file)
     hosts_lines = read_hosts_file()
     new_lines = hosts_lines.copy()
 
@@ -52,10 +68,11 @@ def block():
             new_lines.append(f"{ZEROED_IP} {domain}\n")
 
     write_hosts_file(new_lines)
+    flush_dns()
 
 
-def unblock():
-    dictionary = get_dictionary()
+def unblock(file=None):
+    dictionary = get_dictionary(file)
     hosts_lines = read_hosts_file()
     new_lines = []
 
@@ -75,9 +92,10 @@ def unblock():
             new_lines.append(line)
 
     write_hosts_file(new_lines)
+    flush_dns()
 
 
-def blocked_list():
+def blocked_list(file=None):
     hosts_lines = read_hosts_file()
     blocked = []
 
@@ -96,9 +114,9 @@ def blocked_list():
     else:
         print("Нет заблокированных доменов.")
 
-
 def parse_args():
     parser = argparse.ArgumentParser(description="Управление блокировкой доменов через /etc/hosts")
+    parser.add_argument("--file", help="Файл со списком доменов для применения (если не будет выбран, то берется файл \"servers\" рядом со скриптом)", default="servers")
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("block", help="Блокировка доменов из списка")
     subparsers.add_parser("unblock", help="Разблокировка доменов из списка")
@@ -117,12 +135,12 @@ def menu():
     args = parse_args()
 
     if args.command in ["block", "unblock"]:
-        # check_root()
+        check_root()
         backup()
 
     action = actions.get(args.command)
     if action:
-        action()
+        action(args.file)
     else:
         print("Данное действие не поддерживается")
 
